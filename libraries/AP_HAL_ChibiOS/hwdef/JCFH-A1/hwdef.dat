@@ -297,12 +297,8 @@ define AP_NOTIFY_GPIO_LED_RGB_ENABLED 1
 
 
 
-
-
-# enable FLASH parameter storage
-# w25q128 128Mb = 16MB = 16384 KB
-
-
+# use last 2 pages for flash storage
+# H743 has 16 pages of 128k each
 #define HAL_WITH_RAMTRON 1
 define HAL_STORAGE_SIZE 32768
 #STORAGE_FLASH_PAGE 14
