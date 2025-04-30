@@ -10,10 +10,12 @@ import subprocess
 import json
 import fnmatch
 sys.path.insert(0, 'Tools/ardupilotwaf/')
+sys.path.insert(0, 'Tools/scripts/')
 
 import ardupilotwaf
 import boards
 import shutil
+import build_options
 
 from waflib import Build, ConfigSet, Configure, Context, Utils
 from waflib.Configure import conf
@@ -153,6 +155,11 @@ def options(opt):
         action='store_true',
         default=False,
         help='Add debug symbolds to build.')
+
+    g.add_option('--vs-launch',
+        action='store_true',
+        default=False,
+        help='Generate wscript environment variable to .vscode/setting.json for Visual Studio Code')
     
     g.add_option('--disable-watchdog',
         action='store_true',
@@ -487,6 +494,7 @@ def configure(cfg):
 
     cfg.env.BOARD = cfg.options.board
     cfg.env.DEBUG = cfg.options.debug
+    cfg.env.VS_LAUNCH = cfg.options.vs_launch
     cfg.env.DEBUG_SYMBOLS = cfg.options.debug_symbols
     cfg.env.COVERAGE = cfg.options.coverage
     cfg.env.FORCE32BIT = cfg.options.force_32bit
@@ -589,6 +597,13 @@ def configure(cfg):
     else:
         cfg.end_msg('disabled', color='YELLOW')
 
+    if cfg.env.DEBUG:
+        cfg.start_msg('VS Code launch')
+        if cfg.env.VS_LAUNCH:
+            cfg.end_msg('enabled')
+        else:
+            cfg.end_msg('disabled', color='YELLOW')
+
     cfg.start_msg('Coverage build')
     if cfg.env.COVERAGE:
         cfg.end_msg('enabled')
@@ -632,6 +647,11 @@ def configure(cfg):
     cfg.env.CXXFLAGS += ['-include', 'ap_config.h']
 
     _collect_autoconfig_files(cfg)
+
+    if cfg.env.DEBUG and cfg.env.VS_LAUNCH:
+        import vscode_helper
+        vscode_helper.init_launch_json_if_not_exist(cfg)
+        vscode_helper.update_openocd_cfg(cfg)
 
 def collect_dirs_to_recurse(bld, globs, **kw):
     dirs = []
@@ -890,6 +910,10 @@ def build(bld):
     _build_recursion(bld)
 
     _build_post_funs(bld)
+
+    if bld.env.DEBUG and bld.env.VS_LAUNCH:
+        import vscode_helper
+        vscode_helper.update_settings(bld)
 
 ardupilotwaf.build_command('check',
     program_group_list='all',
