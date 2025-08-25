@@ -1,22 +1,25 @@
 --[[
- support takeoff and landing on moving platforms for VTOL planes
+ support takeoff and landing on moving platforms for Copter
 
- See this post for details: https://discuss.ardupilot.org/t/ship-landing-support
+ This script enables a copter to land on a moving ship by:
+ 1. Following the ship at a safe altitude when in RTL mode
+ 2. Initiating descent when throttle stick is lowered
+ 3. Landing directly on the ship when conditions are met
+
+ Based on plane_ship_landing.lua for VTOL planes
 --]]
 
 local MAV_SEVERITY = {EMERGENCY=0, ALERT=1, CRITICAL=2, ERROR=3, WARNING=4, NOTICE=5, INFO=6, DEBUG=7}
 
-local PARAM_TABLE_KEY = 7
+local PARAM_TABLE_KEY = 8
 local PARAM_TABLE_PREFIX = "SHIP_"
 
-local MODE_MANUAL = 0
-local MODE_RTL = 11
-local MODE_QRTL = 21
-local MODE_AUTO = 10
-local MODE_QLOITER = 19
-
-local NAV_TAKEOFF = 22
-local NAV_VTOL_TAKEOFF = 84
+-- local MODE_MANUAL = 0
+local MODE_STABILIZE = 0
+local MODE_RTL = 6
+local MODE_LOITER = 5
+local MODE_AUTO = 3
+local MODE_LAND = 9
 
 local ALT_FRAME_ABSOLUTE = 0
 
@@ -42,8 +45,8 @@ end
 assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, 3), 'could not add param table')
 --[[
   // @Param: SHIP_ENABLE
-  // @DisplayName: Ship landing enable
-  // @Description: Enable ship landing system
+  // @DisplayName: Copter ship landing enable
+  // @Description: Enable copter ship landing system
   // @Values: 0:Disabled,1:Enabled
   // @User: Standard
 --]]
@@ -51,7 +54,7 @@ SHIP_ENABLE     = bind_add_param('ENABLE', 1, 0)
 
 --[[
   // @Param: SHIP_LAND_ANGLE
-  // @DisplayName: Ship landing angle
+  // @DisplayName: Copter ship landing angle
   // @Description: Angle from the stern of the ship for landing approach. Use this to ensure that on a go-around that ship superstructure and cables are avoided. A value of zero means to approach from the rear of the ship. A value of 90 means the landing will approach from the port (left) side of the ship. A value of -90 will mean approaching from the starboard (right) side of the ship. A value of 180 will approach from the bow of the ship. This parameter is combined with the sign of the RTL_RADIUS parameter to determine the holdoff pattern. If RTL_RADIUS is positive then a clockwise loiter is performed, if RTL_RADIUS is negative then a counter-clockwise loiter is used.
   // @Range: -180 180
   // @Units: deg
@@ -61,22 +64,42 @@ SHIP_LAND_ANGLE = bind_add_param('LAND_ANGLE', 2, 0)
 
 --[[
   // @Param: SHIP_AUTO_OFS
-  // @DisplayName: Ship automatic offset trigger
+  // @DisplayName: Copter ship automatic offset trigger
   // @Description: Settings this parameter to one triggers an automatic follow offset calculation based on current position of the vehicle and the landing target. NOTE: This parameter will auto-reset to zero once the offset has been calculated.
   // @Values: 0:Disabled,1:Trigger
   // @User: Standard
 --]]
 SHIP_AUTO_OFS   = bind_add_param('AUTO_OFS', 3, 0)
 
+--[[
+  // @Param: SHIP_LAND_SPEED
+  // @DisplayName: Copter landing speed
+  // @Description: Vertical speed for landing approach in cm/s
+  // @Range: 10 200
+  // @Units: cm/s
+  // @User: Standard
+--]]
+-- SHIP_LAND_SPEED = bind_add_param('LAND_SPEED', 2, 50)
+
+--[[
+  // @Param: SHIP_RTL_ALT
+  // @DisplayName: Copter RTL altitude
+  // @Description: Altitude above ship to maintain in RTL mode before landing in meters
+  // @Range: 5 100
+  // @Units: m
+  // @User: Standard
+--]]
+-- SHIP_RTL_ALT    = bind_add_param('RTL_ALT', 3, 15)
+
 -- other parameters
 RCMAP_THROTTLE  = bind_param("RCMAP_THROTTLE")
-RTL_ALTITUDE    = bind_param("RTL_ALTITUDE")
-Q_RTL_ALT       = bind_param("Q_RTL_ALT")
-AIRSPEED_CRUISE = bind_param("AIRSPEED_CRUISE")
-TECS_LAND_ARSPD = bind_param("TECS_LAND_ARSPD")
-Q_TRANS_DECEL   = bind_param("Q_TRANS_DECEL")
-WP_LOITER_RAD   = bind_param("WP_LOITER_RAD")
-RTL_RADIUS      = bind_param("RTL_RADIUS")
+RTL_ALT    = bind_param("RTL_ALT")
+-- Q_RTL_ALT       = bind_param("Q_RTL_ALT")
+-- AIRSPEED_CRUISE = bind_param("AIRSPEED_CRUISE")
+-- TECS_LAND_ARSPD = bind_param("TECS_LAND_ARSPD")
+-- Q_TRANS_DECEL   = bind_param("Q_TRANS_DECEL")
+-- WP_LOITER_RAD   = bind_param("WP_LOITER_RAD")
+-- RTL_RADIUS      = bind_param("RTL_RADIUS")
 FOLL_OFS_X      = bind_param("FOLL_OFS_X")
 FOLL_OFS_Y      = bind_param("FOLL_OFS_Y")
 FOLL_OFS_Z      = bind_param("FOLL_OFS_Z")
@@ -99,7 +122,7 @@ local STAGE_IDLE = 2
 local landing_stage = STAGE_HOLDOFF
 
 -- other state
-local vehicle_mode = MODE_MANUAL
+local vehicle_mode = MODE_STABILIZE
 local reached_alt = false
 local throttle_pos = THROTTLE_HIGH
 local have_target = false
@@ -109,11 +132,12 @@ function sq(v)
    return v*v
 end
 
+
 -- check key parameters
 function check_parameters()
-  --[[
-     parameter values which are auto-set on startup
-  --]]
+   --[[
+      parameter values which are auto-set on startup
+   --]]
    local key_params = {
       FOLL_ENABLE = 1,
       FOLL_OFS_TYPE = 1,
@@ -212,12 +236,12 @@ function stopping_distance()
 end
 
 -- get holdoff distance
-function get_holdoff_radius()
-   if RTL_RADIUS:get() ~= 0 then
-      return RTL_RADIUS:get()
-   end
-   return WP_LOITER_RAD:get()
-end
+-- function get_holdoff_radius()
+--    if RTL_RADIUS:get() ~= 0 then
+--       return RTL_RADIUS:get()
+--    end
+--    return WP_LOITER_RAD:get()
+-- end
 
 -- get holdoff distance
 function get_holdoff_distance()
@@ -317,9 +341,9 @@ function update_mode()
    if mode == MODE_RTL then
       landing_stage = STAGE_HOLDOFF
       reached_alt = false
-   elseif mode ~= MODE_QRTL then
-      landing_stage = STAGE_IDLE
-      reached_alt = false
+   -- elseif mode ~= MODE_QRTL then
+   --    landing_stage = STAGE_IDLE
+   --    reached_alt = false
    end
 end
 
@@ -329,6 +353,8 @@ function update_target()
       if have_target then
          gcs:send_text(MAV_SEVERITY.WARNING, "Lost beacon")
          arming:set_aux_auth_failed(auth_id, "Ship: no beacon")
+      else
+         gcs:send_text(MAV_SEVERITY.INFO, "Found beacon")
       end
       have_target = false
       return
@@ -336,6 +362,8 @@ function update_target()
    if not have_target then
       gcs:send_text(MAV_SEVERITY.INFO, "Have beacon")
       arming:set_aux_auth_passed(auth_id)
+   else 
+      gcs:send_text(MAV_SEVERITY.INFO, "Beacon already found")
    end
    have_target = true
 
@@ -414,15 +442,10 @@ function update()
       get target location before we check vehicle state to prevent a
       race condition with the user changing mode or target
    --]]
-   -- somewhere the plane will go to
    local next_WP = vehicle:get_target_location()
    if not next_WP then
       -- not in a flight mode with a target location
       return
-   else 
-      -- gcs:send_text(MAV_SEVERITY.INFO, string.format("v1 (%.2f,%.2f,%.2f)", current_pos:lat(), current_pos:lng(), current_pos:alt()))
-      -- gcs:send_text(MAV_SEVERITY.INFO, string.format("v2 (%.2f,%.2f,%.2f)", target_pos:lat(), target_pos:lng(), target_pos:alt()))
-      -- gcs:send_text(MAV_SEVERITY.INFO, string.format("v3 (%.2f,%.2f,%.2f)", next_WP:lat(), next_WP:lng(), next_WP:alt()))
    end
 
    update_throttle_pos()
@@ -444,14 +467,14 @@ function update()
          check_approach_tangent()
       end
 
-   elseif vehicle_mode == MODE_QRTL then
-      vehicle:set_velocity_match(target_velocity:xy())
-      target_pos:alt(next_WP:alt())
-      vehicle:update_target_location(next_WP, target_pos)
+   -- elseif vehicle_mode == MODE_QRTL then
+   --    vehicle:set_velocity_match(target_velocity:xy())
+   --    target_pos:alt(next_WP:alt())
+   --    vehicle:update_target_location(next_WP, target_pos)
 
-      if throttle_pos == THROTTLE_HIGH then
-         check_approach_abort()
-      end
+   --    if throttle_pos == THROTTLE_HIGH then
+   --       check_approach_abort()
+   --    end
       
    elseif vehicle_mode == MODE_AUTO then
       local id = mission:get_current_nav_id()
@@ -462,16 +485,16 @@ function update()
          vehicle:update_target_location(next_WP, tpos)
       end
 
-   elseif vehicle_mode == MODE_QLOITER then
-      vehicle:set_velocity_match(target_velocity:xy())
+   -- elseif vehicle_mode == MODE_QLOITER then
+   --    vehicle:set_velocity_match(target_velocity:xy())
    end
 
 end
 
 function loop()
    update()
-   -- run at 2Hz
-   return loop, 500
+   -- run at 20Hz
+   return loop, 50
 end
 
 check_parameters()
@@ -494,4 +517,5 @@ end
 
 -- start running update loop
 return protected_wrapper()
+
 
