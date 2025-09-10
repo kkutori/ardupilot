@@ -414,15 +414,10 @@ function update()
       get target location before we check vehicle state to prevent a
       race condition with the user changing mode or target
    --]]
-   -- somewhere the plane will go to
    local next_WP = vehicle:get_target_location()
    if not next_WP then
       -- not in a flight mode with a target location
       return
-   else 
-      -- gcs:send_text(MAV_SEVERITY.INFO, string.format("v1 (%.2f,%.2f,%.2f)", current_pos:lat(), current_pos:lng(), current_pos:alt()))
-      -- gcs:send_text(MAV_SEVERITY.INFO, string.format("v2 (%.2f,%.2f,%.2f)", target_pos:lat(), target_pos:lng(), target_pos:alt()))
-      -- gcs:send_text(MAV_SEVERITY.INFO, string.format("v3 (%.2f,%.2f,%.2f)", next_WP:lat(), next_WP:lng(), next_WP:alt()))
    end
 
    update_throttle_pos()
@@ -470,8 +465,8 @@ end
 
 function loop()
    update()
-   -- run at 2Hz
-   return loop, 500
+   -- run at 20Hz
+   return loop, 50
 end
 
 check_parameters()
