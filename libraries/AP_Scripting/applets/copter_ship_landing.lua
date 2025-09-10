@@ -97,14 +97,14 @@ SHIP_WP_OFS_X = bind_add_param('WP_OFS_X', 3, -20)
 SHIP_WP_OFS_Y = bind_add_param('WP_OFS_Y', 4, 0)
 
 --[[
-  // @Param: SHIP_WP_OFS_ALT
+  // @Param: SHIP_WP_OFS_Z
   // @DisplayName: offset altitude of copter to home
-  // @Description: positive: copter is always above the home
+  // @Description: positive: copter is always above the home, negative: copter is above the home
   // @Range: 
   // @Units: meter
   // @User: Standard
 --]]
-SHIP_WP_OFS_ALT = bind_add_param('WP_OFS_ALT', 5, 50)
+SHIP_WP_OFS_Z = bind_add_param('WP_OFS_Z', 5, -30)
 
 
 
@@ -128,14 +128,17 @@ local target_velocity = Vector3f()
 local target_heading = 0.0
 -- positon where the aircraft should fly to
 local desired_pos = Location()
+-- The actual indicated location 
+local next_wp = Location()
 -- current copter position
 local current_pos = Location()
 
 -- landing stages
 local STAGE_IDLE = 0
 local STAGE_FOLLOW = 1
-local STAGE_DESCEND = 2
-local STAGE_LAND = 3
+local STAGE_CLIMB = 2
+local STAGE_APPROACH = 3
+local STAGE_LAND = 4
 local landing_stage = STAGE_IDLE
 
 -- other state
@@ -151,7 +154,7 @@ local DISTANCE_HISTORY_SIZE = 10  -- Number of distance measurements to keep
 local RECORD_CNT = 0
 local WAITING_CNT = 0
 local WAITING_STABILITY = 0
-local DISTANCE_STABILITY_THRESHOLD = 0.3  -- Meters, threshold for considering distance stable
+local DISTANCE_STABILITY_THRESHOLD = 0.15  -- Meters, threshold for considering distance stable
 local COMPENSATION_STEP = 0.2  -- adjust compensation each time
 local MAX_COMPENSATION = 20  -- Maximum compensation value
 
@@ -260,10 +263,10 @@ end
    during the actual flight, copter will lag behind the next_wp by a certain distance, so a certain distance compensation should be given
 --]]
 function update_compensation()
-   -- lua run at 10hz, run every 100 ms
+   -- lua run at 20hz, run every 50 ms
 
    -- compensation is new, wait aircraft fly away from last stable position
-   if WAITING_CNT > 0 and WAITING_CNT < 10 then 
+   if WAITING_CNT > 0 and WAITING_CNT < 30 then 
       WAITING_CNT = WAITING_CNT + 1
       return
    else 
@@ -272,7 +275,7 @@ function update_compensation()
 
    -- record data every 500 ms
    -- analysis 10 datas in 5 seconds
-   if RECORD_CNT <= 5 then
+   if RECORD_CNT <= 10 then
       RECORD_CNT = RECORD_CNT + 1
       return
    else
@@ -299,7 +302,7 @@ function update_compensation()
    avg_dist = avg_dist / #distance_history
 
    for i, dist in ipairs(distance_history) do
-      if math.abs(avg_dist - dist) > 0.15 then
+      if math.abs(avg_dist - dist) > DISTANCE_STABILITY_THRESHOLD then
          stable = false
          break
       end
@@ -348,11 +351,37 @@ function update_compensation()
    end
 end
 
+
+local timestamp1 = 0 -- first time reach the position
+local timestamp2 = 0 -- current time at the position
+
+--[[
+  check if we've reached desired altitude
+--]]
+function reached_altitude()
+   if math.abs(current_pos:alt() - target_pos:alt() - RTL_ALT:get()) < 20 then
+      if timestamp1 == 0 then
+         -- record first time aircraft reach landing altitude
+         timestamp1 = millis():toint()
+      end
+      -- record current time
+      timestamp2 = millis():toint()
+
+      -- if time difference is more than 3 seconds, aircraft is stable
+      if timestamp2 - timestamp1 > 3000 and timestamp1 ~= 0 then
+         timestamp1 = 0
+         return true
+      end
+   else 
+      timestamp1 = 0
+   end
+
+   return false
+end
+
 --[[
   check if we've reached directly above home
 --]]
-local timestamp1 = 0 -- first time reach the position
-local timestamp2 = 0 -- current time at the position
 function is_directly_above_home()
    -- check if copter is directly above home
    -- 1. check alt
@@ -364,9 +393,9 @@ function is_directly_above_home()
    -- 2. check lat lon
    local distance_xy = current_pos:get_distance(target_pos) -- meters
 
-   if landing_stage == STAGE_DESCEND then
+   if landing_stage == STAGE_APPROACH then
       -- altitude within 10 cm, horizontal within 0.2 m
-      if distance_alt <= 10 and distance_xy <= 0.2 then
+      if distance_xy <= 0.2 then
          -- check stable
          -- record first time aircraft reach directly above home
          if timestamp1 == 0 then
@@ -380,12 +409,11 @@ function is_directly_above_home()
             timestamp1 = 0
             return true
          end
-
-         return false
       else
          timestamp1 = 0
-         return false
       end
+
+      return false
 
    elseif landing_stage == STAGE_LAND then
       -- horizontal within 0.2 m
@@ -454,15 +482,15 @@ end
 --]]
 function land_speed_control()
    local alt_temp = current_pos:alt() - target_pos:alt()
-   if alt_temp < 600 then
-      if param:get("WPNAV_SPEED_DN") > 12 then
-         gcs:send_text(MAV_SEVERITY.INFO, "Slow down2")
-         param:set("WPNAV_SPEED_DN", 12) -- cm/s
+   if alt_temp < 500 then
+      if param:get("WPNAV_SPEED_DN") > 15 then
+         gcs:send_text(MAV_SEVERITY.INFO, "Slow down 15cm/s")
+         param:set("WPNAV_SPEED_DN", 15) -- cm/s
       end
    elseif alt_temp < 1000 then
-      if param:get("WPNAV_SPEED_DN") > 25 then
-         gcs:send_text(MAV_SEVERITY.INFO, "Slow down1")
-         param:set("WPNAV_SPEED_DN", 25) -- cm/s
+      if param:get("WPNAV_SPEED_DN") > 50 then
+         gcs:send_text(MAV_SEVERITY.INFO, "Slow down 50cm/s")
+         param:set("WPNAV_SPEED_DN", 50) -- cm/s
       end
    end
 end
@@ -513,7 +541,16 @@ function update()
    end
    current_pos:change_alt_frame(ALT_FRAME_ABSOLUTE)
 
+   --set follow offset
+   update_auto_offset()
 
+   -- if not armed, return
+   if not arming:is_armed() then 
+      if COMPENSATION ~= 0 then
+         COMPENSATION = 0
+      end
+      return
+   end
 
    -- check throttle position to cntrol landing stages
    --[[
@@ -526,12 +563,8 @@ function update()
    -- get vehicle mode (RTL?)
    update_mode()
 
-   --set follow offset
-   update_auto_offset()
-
-
    -- copter should fly to next_wp
-   local next_wp = target_pos:copy()
+   next_wp = target_pos:copy()
    desired_pos = target_pos:copy()
 
    if vehicle_mode == MODE_GUIDED then
@@ -549,29 +582,53 @@ function update()
          N_offset = (SHIP_WP_OFS_X:get() + COMPENSATION) * math.cos(heading_rad) - SHIP_WP_OFS_Y:get() * math.sin(heading_rad)
          E_offset = (SHIP_WP_OFS_X:get() + COMPENSATION) * math.sin(heading_rad) + SHIP_WP_OFS_Y:get() * math.cos(heading_rad)
          next_wp:offset(N_offset, E_offset)
-         next_wp:alt(target_pos:alt()+ SHIP_WP_OFS_ALT:get()*100) -- uintt: cm m
+         next_wp:alt(target_pos:alt() - SHIP_WP_OFS_Z:get()*100) -- uintt: cm m
 
          vehicle:set_target_location(next_wp)
 
-         -- debug
-         dist_hor = current_pos:get_distance(target_pos) -- meters
-         if (math.abs(dist_hor - dist_hor_prev) > 0.1) then
-            gcs:send_text(MAV_SEVERITY.INFO, string.format("dist_h:%.2f, com:%.2f", dist_hor, COMPENSATION))
-            dist_hor_prev = dist_hor
-         end
-
          -- check if copter should descend and fly directly above home
          if throttle_pos == THROTTLE_LOW then
-            landing_stage = STAGE_DESCEND
-            -- COMPENSATION = 0
+            if (current_pos:alt() - target_pos:alt()) < RTL_ALT:get() then
+               landing_stage = STAGE_CLIMB
+            else
+               landing_stage = STAGE_APPROACH
+            end
          end
 
-      elseif landing_stage == STAGE_DESCEND then
+      elseif landing_stage == STAGE_CLIMB then
+         -- update desired_pos with offset
+         local heading_rad = math.rad(target_heading)
+         local N_offset = SHIP_WP_OFS_X:get() * math.cos(heading_rad) - SHIP_WP_OFS_Y:get() * math.sin(heading_rad)
+         local E_offset = SHIP_WP_OFS_X:get() * math.sin(heading_rad) + SHIP_WP_OFS_Y:get() * math.cos(heading_rad)
+         desired_pos:offset(N_offset, E_offset)
+
+         -- update compensation
+         update_compensation()
+
+         -- update next_wp with offset and compensation
+         N_offset = (SHIP_WP_OFS_X:get() + COMPENSATION) * math.cos(heading_rad) - SHIP_WP_OFS_Y:get() * math.sin(heading_rad)
+         E_offset = (SHIP_WP_OFS_X:get() + COMPENSATION) * math.sin(heading_rad) + SHIP_WP_OFS_Y:get() * math.cos(heading_rad)
+         next_wp:offset(N_offset, E_offset)
+         next_wp:alt(target_pos:alt() + RTL_ALT:get()) -- uintt: cm cm
+
+         vehicle:set_target_location(next_wp)
+
+         -- check if get desired altitude
+         if reached_altitude() then
+            landing_stage = STAGE_APPROACH
+            gcs:send_text(MAV_SEVERITY.INFO, "Climbed to RTL_ALT")
+         end
+
+         -- check throttle position
+         if throttle_pos ~= THROTTLE_LOW then
+            landing_stage = STAGE_FOLLOW
+         end
+
+      elseif landing_stage == STAGE_APPROACH then
          -- desired_pos no offset
 
          -- update_compensation
          update_compensation()
-
 
          -- update next_wp with compensation
          local heading_rad = math.rad(target_heading)
@@ -581,13 +638,6 @@ function update()
          next_wp:alt(target_pos:alt()+ RTL_ALT:get()) -- uint: cm cm
 
          vehicle:set_target_location(next_wp)
-
-         -- debug
-         dist_hor = current_pos:get_distance(target_pos) -- meters
-         if (math.abs(dist_hor - dist_hor_prev) > 0.1) then
-            gcs:send_text(MAV_SEVERITY.INFO, string.format("dist_h:%.2f, com:%.2f", dist_hor, COMPENSATION))
-            dist_hor_prev = dist_hor
-         end
 
          -- check if copter is directly above home
          if is_directly_above_home() then
@@ -667,8 +717,8 @@ end
 
 function loop()
    update()
-   -- run at 10Hz
-   return loop, 100
+   -- run at 20Hz
+   return loop, 50
 end
 
 check_parameters()
