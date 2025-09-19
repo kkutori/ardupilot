@@ -151,7 +151,7 @@ local LANDED = false
 local vehicle_mode = MODE_STABILIZE
 local throttle_pos = THROTTLE_HIGH
 local have_target = false
-VEL_PROP = 0.7
+local VEL_PROP = 0.7
 
 -- time stamp
 local timestamp1 = 0 -- first time reach the position
@@ -358,15 +358,22 @@ function set_aircraft_velocity()
    desired_vel:x(target_velocity:x() + correction_vel.x)
    desired_vel:y(target_velocity:y() + correction_vel.y)
 
-   if landing_stage ~= STAGE_LAND then
-      desired_vel:z(target_velocity:z() + correction_vel.z)
-   else
+   if landing_stage == STAGE_LAND then
       if (current_pos:alt() - target_pos:alt() > 500) then
          desired_vel:z(0.6)
       else
          desired_vel:z(0.3)
       end
+   elseif landing_stage == STAGE_CLIMB then
+      if ((current_pos:alt() - target_pos:alt()) < (RTL_ALT:get() - 50)) then
+         desired_vel:z(-0.8)
+      else
+         desired_vel:z(target_velocity:z() + correction_vel.z)
+      end
+   else
+         desired_vel:z(target_velocity:z() + correction_vel.z)
    end
+
    vehicle:set_target_velocity_NED(desired_vel)
 end
 
@@ -446,8 +453,8 @@ function update()
             vehicle:set_target_location(desired_pos)
          end
 
-         -- check if copter should descend and fly directly above home
-         if throttle_pos == THROTTLE_LOW then
+         -- check if copter should climb first or fly directly above home
+         if throttle_pos == THROTTLE_LOW or throttle_pos == THROTTLE_MID then
             if (current_pos:alt() - target_pos:alt()) < RTL_ALT:get() then
                landing_stage = STAGE_CLIMB
                -- remember the offset and climb at this relative position
@@ -477,7 +484,7 @@ function update()
          end
 
          -- check throttle position
-         if throttle_pos ~= THROTTLE_LOW then
+         if throttle_pos == THROTTLE_HIGH then
             landing_stage = STAGE_FOLLOW
          end
 
@@ -492,14 +499,18 @@ function update()
             vehicle:set_target_location(desired_pos)
          end
 
-         -- check if copter is directly above home
-         if is_directly_above_home() then
+         -- THROTTLE_LOW and aircraft is directly above home, go to STAGE_LAND
+         if is_directly_above_home() and throttle_pos == THROTTLE_LOW then
             gcs:send_text(MAV_SEVERITY.INFO, "Aircraft is directly above home, start landing")
             landing_stage = STAGE_LAND
          end
 
-         -- check throttle position
-         if throttle_pos ~= THROTTLE_LOW then
+         -- THROTTLE_MID, (1)holdoff, (2)climb to RTL_ALT when quit STAGE_LAND
+
+         -- THROTTLE_HIGH, go to STAGE_FOLLOW
+         -- 3 ways go to STAGE_FOLLOW, (1)from STAGE_FOLLOW, (2)from STAGE_CLIMB, (3)from STAGE_LAND
+         -- only in (3), aircraft_alt will be lower than ship_alt+RTL_ALT
+         if throttle_pos == THROTTLE_HIGH and (current_pos:alt() - target_pos:alt() - RTL_ALT:get()) > -20 then
             landing_stage = STAGE_FOLLOW
          end
 
@@ -510,10 +521,8 @@ function update()
 
          -- check if abort landing
          if throttle_pos ~= THROTTLE_LOW then
-            gcs:send_text(MAV_SEVERITY.INFO, "Throttle high, abort landing")
-            landing_stage = STAGE_IDLE
-            vehicle:set_mode(MODE_LOITER)
-            vehicle_mode = MODE_LOITER
+            gcs:send_text(MAV_SEVERITY.INFO, "Throttle HIGH/MID, abort landing, climb to RTL_ALT")
+            landing_stage = STAGE_APPROACH
          end
       end
    end
