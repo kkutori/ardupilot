@@ -1,2 +1,121 @@
-# hw definition file f103 JCFH Multi-source Temperature Unit
+# hw definition file for processing by chibios_pins.py
 
+# MCU class and specific type
+MCU STM32F103 STM32F103xB
+
+# bootloader starts firmware at 23k + 2k (STORAGE_FLASH_PAGES)
+FLASH_RESERVE_START_KB 25
+
+# store parameters in pages 23 and 24
+STORAGE_FLASH_PAGE 23
+define HAL_STORAGE_SIZE 800
+
+# board ID. See Tools/AP_Bootloader/board_types.txt
+APJ_BOARD_ID 1000
+
+# setup build for a peripheral firmware
+env AP_PERIPH 1
+
+# enable watchdog
+
+# crystal frequency
+OSCILLATOR_HZ 8000000
+
+define CH_CFG_ST_FREQUENCY 1000
+
+# assume the 128k flash part for now
+FLASH_SIZE_KB 128
+
+
+# order of UARTs
+SERIAL_ORDER EMPTY EMPTY EMPTY USART1
+
+# USART1, connected to GPS
+PA9  USART1_TX USART1 SPEED_HIGH NODMA
+PA10 USART1_RX USART1 SPEED_HIGH NODMA
+
+
+define HAL_UART_NODMA
+
+
+# debug
+# if enable, error
+#PA13 JTMS-SWDIO SWD
+#PA14 JTCK-SWCLK SWD
+
+
+
+# analog input
+# PA5 VIN5 ADC1
+PA0 TEMP1 ADC1 SCALE(1)
+PA1 TEMP2 ADC1 SCALE(1)
+PA2 TEMP3 ADC1 SCALE(1)
+PA3 TEMP4 ADC1 SCALE(1)
+PA6 TEMP5 ADC1 SCALE(1)
+PA7 TEMP6 ADC1 SCALE(1)
+define HAL_USE_ADC TRUE
+define STM32_ADC_USE_ADC1 TRUE
+define HAL_DISABLE_ADC_DRIVER TRUE
+
+define HAL_NO_GPIO_IRQ
+define CH_CFG_ST_TIMEDELTA 0
+#define CH_CFG_USE_DYNAMIC FALSE
+define SERIAL_BUFFERS_SIZE 512
+define PORT_INT_REQUIRED_STACK 64
+
+# avoid timer and RCIN threads to save memory
+define HAL_NO_TIMER_THREAD
+define HAL_NO_RCOUT_THREAD
+
+#defined to turn off undef warnings
+define __FPU_PRESENT 0
+
+define DMA_RESERVE_SIZE 0
+
+
+# MAIN_STACK is stack of initial thread and ISRs
+MAIN_STACK 0x200
+
+# PROCESS_STACK controls stack for main thread
+PROCESS_STACK 0xA00
+
+# enable CAN support
+PB8 CAN_RX CAN
+PB9 CAN_TX CAN
+#define HAL_USE_CAN TRUE
+#define STM32_CAN_USE_CAN1 TRUE
+
+define CAN_APP_NODE_NAME "JCFH_Multi_Temp_Unit"
+
+# reduce memory overheads
+define HAL_CAN_POOL_SIZE 2500
+
+
+
+define HAL_UART_MIN_TX_SIZE 128
+define HAL_UART_MIN_RX_SIZE 128
+
+define HAL_UART_STACK_SIZE 256
+define STORAGE_THD_WA_SIZE 300
+define IO_THD_WA_SIZE      300
+
+
+
+
+
+define HAL_DEVICE_THREAD_STACK 256
+
+define AP_PARAM_MAX_EMBEDDED_PARAM 0
+
+
+
+
+# keep ROMFS uncompressed as we don't have enough RAM
+# to uncompress the bootloader at runtime
+env ROMFS_UNCOMPRESSED True
+
+# reduce the number of CAN RX Buffer
+define HAL_CAN_RX_QUEUE_SIZE 32
+
+# disable stack checking to reduce flash cost
+define CH_DBG_ENABLE_STACK_CHECK FALSE
