@@ -26,6 +26,9 @@ define CH_CFG_ST_FREQUENCY 1000
 # assume the 128k flash part for now
 FLASH_SIZE_KB 128
 
+# a LED to flash
+PC13 LED OUTPUT HIGH
+
 
 # order of UARTs
 SERIAL_ORDER EMPTY EMPTY EMPTY USART1
