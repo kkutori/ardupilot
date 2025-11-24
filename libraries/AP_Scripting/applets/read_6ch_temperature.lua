@@ -37,14 +37,14 @@ MOTOR_TEMP_LOG_EN = bind_add_param('LOG_EN', 1, 0)  -- 0:disable, 1:enable
 local SERIAL_PORT = 1     -- 串口端口号，对应SERIALx_PROTOCOL = 28的端口
 local BAUD_RATE = 115200  -- 波特率
 local UPDATE_RATE_MS = 1000 -- 更新频率(毫秒)
-local MAX_BYTES_TO_READ = 10 -- 每次读取的最大字节数
-local ENABLE_DEBUG = true -- 启用调试信息
+local MAX_BYTES_TO_READ = 20 -- 每次读取的最大字节数
+local ENABLE_DEBUG = false -- 启用调试信息
 local START_DELAY_SEC = 5 -- 启动延迟时间(秒)
 
 -- 全局变量
-local MSG_HEADER = 0x80  -- 消息头标识符
+local MSG_HEADER = 0xAA  -- 消息头标识符
 local MSG_ERR = -99      -- 错误代码
-local motor_temperature = {0, 0, 0, 0, 0, 0}  -- range -128 to 127
+local motor_temperature = {0, 0, 0, 0, 0, 0}  -- range -128 to 127, temperature values divided by 100
 local port = nil
 local initialized = false -- 初始化状态
 local delay_timer = 0     -- 延迟计时器
@@ -74,32 +74,34 @@ end
 
 -- 处理接收到的数据
 function process_received_data(data)
-    -- 检查数据长度是否至少为7字节
-    if #data < 7 then
+    -- 检查数据长度是否至少为13字节 (1 header + 12 bytes for 6 s16 values)
+    if #data < 13 then
         return
     end
     
-    -- 检查数据是否以 MSG_HEADER(0x80) 开头
+    -- 检查数据是否以 MSG_HEADER(0xAA) 开头
     if string.byte(data, 1) == MSG_HEADER then
-        -- 提取第2到第7字节（共6个字节）int8_t
+        -- 提取6个s16温度数据 (每个s16占2字节，共12字节)
         for i = 1, 6 do
-            local byte_value = string.byte(data, i + 1)
-
-            -- if byte_value == MSG_ERR then
-            --     gcd:send_text(MAV_SEVERITY.ERROR, "temp error" )
-            -- end
-
-            -- 转换为有符号int8_t (处理负值)
-            if byte_value > 127 then
-                motor_temperature[i] = byte_value - 256
-            else
-                motor_temperature[i] = byte_value
+            -- 计算字节位置 (第2-3字节为第一个s16，第4-5字节为第二个s16，以此类推)
+            local byte1 = string.byte(data, i * 2)      -- 高字节
+            local byte2 = string.byte(data, i * 2 + 1)  -- 低字节
+            
+            -- 组合成s16值 (小端序)
+            local s16_value = byte2 * 256 + byte1
+            
+            -- 处理负值 (如果最高位为1，则是负数)
+            if s16_value > 32767 then
+                s16_value = s16_value - 65536
             end
+            
+            -- 除以100并保存到motor_temperature表
+            motor_temperature[i] = s16_value / 100
         end
 
         if MOTOR_TEMP_LOG_EN:get() == 1 then
-            -- 记录温度数据到日志
-            logger:write('MTMP', 'T1,T2,T3,T4,T5,T6', 'bbbbbb',
+            -- 记录温度数据到日志 (使用浮点数格式，保留2位小数)
+            logger:write('MTMP', 'T1,T2,T3,T4,T5,T6', 'ffffff',
                         motor_temperature[1], motor_temperature[2], motor_temperature[3],
                         motor_temperature[4], motor_temperature[5], motor_temperature[6])
         end
@@ -117,7 +119,7 @@ function process_received_data(data)
         
         -- 记录接收到的温度数据
         if ENABLE_DEBUG then
-            gcs:send_text(MAV_SEVERITY.INFO, string.format("Temp: %d,%d,%d,%d,%d,%d", 
+            gcs:send_text(MAV_SEVERITY.INFO, string.format("Temp: %.2f,%.2f,%.2f,%.2f,%.2f,%.2f", 
                 motor_temperature[1], motor_temperature[2], motor_temperature[3],
                 motor_temperature[4], motor_temperature[5], motor_temperature[6]))
         end
@@ -157,14 +159,14 @@ function update()
     end
 
     local nbytes = port:available()
-    nbytes = 7
+    nbytes = 13
     if not nbytes then
       gcs:send_text(MAV_SEVERITY.ERROR, "available() returns nil")
       return update, UPDATE_RATE_MS
     end
 
-    -- 确保有足够的字节来读取一个完整的数据包
-    if nbytes >= 7 then
+    -- 确保有足够的字节来读取一个完整的数据包 (13字节)
+    if nbytes >= 13 then
       -- 限制每次读取的字节数，优先处理完整的数据包
       nbytes = math.min(nbytes, MAX_BYTES_TO_READ)
       
@@ -178,14 +180,14 @@ function update()
       end
 
       -- 处理接收到的数据
-      if #data >= 7 then
+      if #data >= 13 then
         process_received_data(data)
       end
     end
   end
 
   -- 继续循环
-  return update, UPDATE_RATE_MS
+  return update, 50
 end
 
 -- 错误处理包装函数
