@@ -160,6 +160,10 @@ local timestamp2 = 0 -- current time at the position
 local dist_horizontal = 0
 local dist_horizontal_prev = 0
 
+-- velocity correction
+local CORRECTION_VEL_MAX = 1.0
+local CORRECTION_VEL_MAX_SQ = 1.0
+
 
 -- check key parameters
 function check_parameters()
@@ -345,10 +349,26 @@ function set_aircraft_velocity()
       z = VEL_PROP * rel_pos:z()
    }
 
-   -- limit velocity
-   local correction_mag = math.sqrt(correction_vel.x^2 + correction_vel.y^2 + correction_vel.z^2)
-   if correction_mag > 1.0 then
-      local scale = 1.0 / correction_mag
+
+   -- set CORRECTION_VEL_MAX according to distance
+   dist_horizontal = current_pos:get_distance(desired_pos) -- meters
+   if dist_horizontal > 40 then
+      CORRECTION_VEL_MAX = 10.0
+   elseif dist_horizontal > 20 then
+      CORRECTION_VEL_MAX = 5.0
+   elseif dist_horizontal > 5 then
+      CORRECTION_VEL_MAX = 3.0
+   else
+      CORRECTION_VEL_MAX = 1.0
+   end
+
+   CORRECTION_VEL_MAX_SQ = CORRECTION_VEL_MAX^2
+   local correction_vel_sq = correction_vel.x^2 + correction_vel.y^2 + correction_vel.z^2
+
+   -- limit velocity within CORRECTION_VEL_MAX
+   if correction_vel_sq > CORRECTION_VEL_MAX_SQ then
+      local correction_vel_mag = math.sqrt(correction_vel_sq)
+      local scale = CORRECTION_VEL_MAX / correction_vel_mag
       correction_vel.x = correction_vel.x * scale
       correction_vel.y = correction_vel.y * scale
       correction_vel.z = correction_vel.z * scale
@@ -446,12 +466,8 @@ function update()
          desired_pos:offset(N_offset, E_offset)
          desired_pos:alt(target_pos:alt() - SHIP_FL_Z:get()*100) -- uintt: cm m
 
-         dist_horizontal = current_pos:get_distance(desired_pos) -- meters
-         if dist_horizontal < 20 then
-            set_aircraft_velocity()
-         else
-            vehicle:set_target_location(desired_pos)
-         end
+         -- set velocity according to the dist_horizontal
+         set_aircraft_velocity()
 
          -- check if copter should climb first or fly directly above home
          if throttle_pos == THROTTLE_LOW or throttle_pos == THROTTLE_MID then
@@ -492,12 +508,8 @@ function update()
          -- desired_pos no offset in x y
          desired_pos:alt(target_pos:alt() + RTL_ALT:get())
 
-         dist_horizontal = current_pos:get_distance(desired_pos) -- meters
-         if dist_horizontal < 20 then
-            set_aircraft_velocity()
-         else
-            vehicle:set_target_location(desired_pos)
-         end
+         -- set velocity according to the dist_horizontal
+         set_aircraft_velocity()
 
          -- THROTTLE_LOW and aircraft is directly above home, go to STAGE_LAND
          if is_directly_above_home() and throttle_pos == THROTTLE_LOW then
