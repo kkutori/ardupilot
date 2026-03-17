@@ -3052,7 +3052,7 @@ void GCS_MAVLINK::handle_uuid_req(const mavlink_message_t *msg)
     }
 
     uint8_t current_uuid[UUID_LEN];
-    memset(current_uuid, 0x37, sizeof(current_uuid));
+    memset(current_uuid, 0xFF, sizeof(current_uuid));
     bool found = false;
     if (!uuid_flash_read_latest(current_uuid, found)) {
         return;
