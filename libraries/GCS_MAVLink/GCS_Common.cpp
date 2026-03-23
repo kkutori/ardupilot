@@ -3211,6 +3211,136 @@ MAV_RESULT GCS_MAVLINK::handle_command_request_message(const mavlink_command_int
     return MAV_RESULT_ACCEPTED;
 }
 
+namespace {
+static constexpr uint32_t UUID_FLASH_START = 0x0801E000U;
+static constexpr uint32_t UUID_FLASH_END   = 0x0801F000U;
+static constexpr uint8_t  UUID_LEN         = 20;
+static constexpr uint32_t UUID_SLOT_STRIDE = 32;
+
+static bool uuid_flash_read_latest(uint8_t out[UUID_LEN], bool &found)
+{
+    found = false;
+    if (UUID_FLASH_END <= UUID_FLASH_START) {
+        return false;
+    }
+    if ((UUID_FLASH_END - UUID_FLASH_START) < UUID_LEN) {
+        return false;
+    }
+
+    for (uint32_t addr = UUID_FLASH_START; (addr + UUID_LEN) <= UUID_FLASH_END; addr += UUID_SLOT_STRIDE) {
+        const uint8_t *slot = reinterpret_cast<const uint8_t *>(addr);
+        if (slot[0] == 0xFF) {
+            break;
+        }
+        memcpy(out, slot, UUID_LEN);
+        found = true;
+    }
+    return true;
+}
+
+static bool uuid_flash_find_free_slot(uint32_t &addr_out)
+{
+    if (UUID_FLASH_END <= UUID_FLASH_START) {
+        return false;
+    }
+    if ((UUID_FLASH_END - UUID_FLASH_START) < UUID_LEN) {
+        return false;
+    }
+
+    for (uint32_t addr = UUID_FLASH_START; (addr + UUID_LEN) <= UUID_FLASH_END; addr += UUID_SLOT_STRIDE) {
+        const uint8_t *slot = reinterpret_cast<const uint8_t *>(addr);
+        if (slot[0] == 0xFF) {
+            addr_out = addr;
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
+void GCS_MAVLINK::handle_uuid_req(const mavlink_message_t *msg)
+{
+    mavlink_uuid_req_t packet;
+    mavlink_msg_uuid_req_decode(msg, &packet);
+
+    // 检查是否是发给本飞控的指令
+    if (packet.target_system != mavlink_system.sysid) {
+        return;
+    }
+
+    if (hal.flash == nullptr) {
+        return;
+    }
+
+    uint8_t current_uuid[UUID_LEN];
+    memset(current_uuid, 0xFF, sizeof(current_uuid));
+    bool found = false;
+    if (!uuid_flash_read_latest(current_uuid, found)) {
+        return;
+    }
+
+    // 将读取到的 UUID 发回给地面站
+    mavlink_msg_uuid_data_send(chan, current_uuid);
+}
+
+void GCS_MAVLINK::handle_uuid_set(const mavlink_message_t *msg)
+{
+    mavlink_uuid_set_t packet;
+    mavlink_msg_uuid_set_decode(msg, &packet);
+
+    if (packet.target_system != mavlink_system.sysid) {
+        return;
+    }
+
+    if (hal.flash == nullptr) {
+        return;
+    }
+
+    uint8_t current_uuid[UUID_LEN];
+    memset(current_uuid, 0xFF, sizeof(current_uuid));
+    bool found = false;
+    if (!uuid_flash_read_latest(current_uuid, found)) {
+        return;
+    }
+    if (found && memcmp(current_uuid, packet.uuid, UUID_LEN) == 0) {
+        mavlink_msg_uuid_data_send(chan, packet.uuid);
+        return;
+    }
+
+    uint32_t free_addr = 0;
+    if (!uuid_flash_find_free_slot(free_addr)) {
+        return;
+    }
+
+    // 可兼容 F4、F7 等
+    // STM32H7 要求地址必须是 32 字节对齐
+    // 31U 的二进制是 0001 1111，按位与不为 0 说明不是 32 的整数倍
+    if ((free_addr & 31U) != 0) {
+        return;
+    }
+
+    // 构建 32 字节的写入缓冲区
+    // STM32H7 的最小写入块 (Flash Word) 是 32 bytes
+    const uint8_t H7_WRITE_SIZE = 32; 
+    uint8_t write_buffer[H7_WRITE_SIZE];
+    
+    // 初始化全为 0xFF（不改变未用到的 Flash 位）
+    memset(write_buffer, 0xFF, H7_WRITE_SIZE); 
+    
+    // 将 UUID 拷贝进缓冲区的头部
+    memcpy(write_buffer, packet.uuid, UUID_LEN);
+
+    hal.flash->keep_unlocked(true);
+    const bool ok = hal.flash->write(free_addr, write_buffer, H7_WRITE_SIZE);
+    hal.flash->keep_unlocked(false);
+    if (!ok) {
+        return;
+    }
+
+    // 写入成功后，把收到的数据发回去当作 ACK 确认
+    mavlink_msg_uuid_data_send(chan, packet.uuid);
+}
+
 bool GCS_MAVLINK::get_ap_message_interval(ap_message id, uint16_t &interval_ms) const
 {
     // check if it's a specially-handled message:
@@ -4259,6 +4389,14 @@ void GCS_MAVLINK::handle_message(const mavlink_message_t &msg)
 
     case MAVLINK_MSG_ID_COMMAND_INT:
         handle_command_int(msg);
+        break;
+
+    case MAVLINK_MSG_ID_UUID_REQ:
+        handle_uuid_req(&msg);
+        break;
+
+    case MAVLINK_MSG_ID_UUID_SET:
+        handle_uuid_set(&msg);
         break;
 
 #if AC_POLYFENCE_FENCE_POINT_PROTOCOL_SUPPORT

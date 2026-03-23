@@ -770,6 +770,10 @@ protected:
 
 private:
 
+    // for UUID
+    void handle_uuid_req(const mavlink_message_t *msg);
+    void handle_uuid_set(const mavlink_message_t *msg);
+
     // define the two objects used for parsing incoming messages:
     mavlink_message_t _channel_buffer;
     mavlink_status_t _channel_status;
