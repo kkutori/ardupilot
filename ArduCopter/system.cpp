@@ -13,8 +13,24 @@ static void failsafe_check_static()
     copter.failsafe_check();
 }
 
+#if defined(HAL_GPIO_PE7_TOGGLE_IN) && defined(HAL_GPIO_PE8_TOGGLE_OUT)
+static void pe7_toggle_pe8_isr()
+{
+    hal.gpio->toggle(HAL_GPIO_PE8_TOGGLE_OUT);
+}
+#endif
+
 void Copter::init_ardupilot()
 {
+#if defined(HAL_GPIO_PE7_TOGGLE_IN) && defined(HAL_GPIO_PE8_TOGGLE_OUT)
+    hal.gpio->pinMode(HAL_GPIO_PE8_TOGGLE_OUT, HAL_GPIO_OUTPUT);
+    hal.gpio->write(HAL_GPIO_PE8_TOGGLE_OUT, 0);
+    hal.gpio->pinMode(HAL_GPIO_PE7_TOGGLE_IN, HAL_GPIO_INPUT);
+    hal.gpio->attach_interrupt(HAL_GPIO_PE7_TOGGLE_IN,
+                               pe7_toggle_pe8_isr,
+                               AP_HAL::GPIO::INTERRUPT_RISING);
+#endif
+
     // init winch
 #if AP_WINCH_ENABLED
     g2.winch.init();
