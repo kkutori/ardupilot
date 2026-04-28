@@ -14,10 +14,6 @@ USB_STRING_MANUFACTURER "jiachuang"
 # board ID for firmware load
 APJ_BOARD_ID 1013
 
-# to be compatible with the px4 bootloader we need
-# to use a different RAM_MAP
-env USE_ALT_RAM_MAP 1
-
 # flash size in KB
 FLASH_SIZE_KB 2048
 
