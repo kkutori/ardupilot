@@ -6,6 +6,8 @@
 #include "AC_AttitudeControl.h"
 #include <AP_Motors/AP_MotorsMulticopter.h>
 
+#include <AP_HAL/utility/Socket.h>
+
 // default rate controller PID gains
 #ifndef AC_ATC_MULTI_RATE_RP_P
   # define AC_ATC_MULTI_RATE_RP_P           0.135f
@@ -151,4 +153,6 @@ protected:
 
     // angle_p/pd boost multiplier
     AP_Float              _throttle_gain_boost;
+
+    SocketAPM sock{true};
 };
