@@ -40,20 +40,20 @@ while true
 
     % Wait for data
     while true
-         in_bytes = pnet(u,'readpacket',bytes_read);
+         in_bytes = pnet(u,'readpacket');
          if in_bytes > 0
              break;
          end
-     end
+    end
 
     % if there is another frame waiting, read it straight away
-    if in_bytes > bytes_read
-        if in_bytes == u.InputBufferSize
+    if in_bytes ~= bytes_read
+        % if in_bytes == u.InputBufferSize
             % buffer got full, reset
             % should only happen if we have been paused in Matlab for some time
-            fprintf('Buffer reset\n')
-            continue;
-        end
+            % fprintf('Buffer reset\n')
+            % continue;
+        % end
         continue;
     end
 
