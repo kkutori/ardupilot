@@ -4,6 +4,16 @@
 #include <AC_PID/AC_PID.h>
 #include <AP_Scheduler/AP_Scheduler.h>
 
+struct MyPIDInfo {
+    float target;
+    float actual;
+    float error;
+    float P;
+    float I;
+    float D;
+    float FF;
+};
+
 // table of user settable parameters
 const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
     // parameters from parent vehicle
@@ -463,6 +473,19 @@ void AC_AttitudeControl_Multi::rate_controller_run_dt(const Vector3f& gyro, floa
 
     _motors.set_yaw(get_rate_yaw_pid().update_all(ang_vel_body.z, gyro.z,  dt, _motors.limit.yaw, _pd_scale.z) + _actuator_sysid.z);
     _motors.set_yaw_ff(get_rate_yaw_pid().get_ff()*_feedforward_scalar);
+
+    const AP_PIDInfo& tempinfo = get_rate_roll_pid().get_pid_info();
+    MyPIDInfo my_pid_info;
+    
+    my_pid_info.target = tempinfo.target;
+    my_pid_info.actual = tempinfo.actual;
+    my_pid_info.error = tempinfo.error;
+    my_pid_info.P = tempinfo.P;
+    my_pid_info.I = tempinfo.I;
+    my_pid_info.D = tempinfo.D;
+    my_pid_info.FF = tempinfo.FF;
+    // send the PID values out over UDP
+    sock.sendto(&my_pid_info, sizeof(my_pid_info), "172.22.112.1", 9002);
 
     _pd_scale_used = _pd_scale;
 
