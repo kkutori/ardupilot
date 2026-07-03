@@ -1,0 +1,313 @@
+# hw definition file for processing by chibios_hwdef.py
+# for the HolybroV6C hardware
+
+
+# default to all pins low to avoid ESD issues
+#DEFAULTGPIO OUTPUT LOW PULLDOWN
+
+# MCU class and specific type
+MCU STM32H7xx STM32H743xx
+
+# crystal frequency
+OSCILLATOR_HZ 16000000
+
+# ChibiOS system timer
+STM32_ST_USE_TIMER 2
+
+# USB setup
+USB_VENDOR 0x3162 # ONLY FOR USE BY Holybro
+USB_PRODUCT 0x0053
+USB_STRING_MANUFACTURER "Holybro"
+
+# board ID for firmware load
+APJ_BOARD_ID 56
+
+FLASH_RESERVE_START_KB 128
+
+# to be compatible with the px4 bootloader we need
+# to use a different RAM_MAP
+env USE_ALT_RAM_MAP 1
+
+# flash size
+FLASH_SIZE_KB 2048
+
+env OPTIMIZE -O2
+
+
+####################################################
+####################################################
+####################################################
+####################################################
+
+
+# POWER1
+PC4   GPIO_PC4   OUTPUT HIGH
+PC5   GPIO_PC5   OUTPUT HIGH
+
+# DSM
+
+# USB
+PA11  GPIO_PA11  OUTPUT HIGH
+PA12  GPIO_PA12  OUTPUT HIGH
+
+#POWER2
+PA2   GPIO_PA2   OUTPUT HIGH
+PB1   GPIO_PB1   OUTPUT HIGH
+
+# GPS2 
+PE0   GPIO_PE0   OUTPUT HIGH
+PE1   GPIO_PE1   OUTPUT HIGH
+#PD12  GPIO_PD12  OUTPUT HIGH
+#PD13  GPIO_PD13  OUTPUT HIGH
+
+# CAN1
+
+# GPS1
+PA10  GPIO_PA10  OUTPUT HIGH
+PB6   GPIO_PB6   OUTPUT HIGH
+#PB7   GPIO_PB7   OUTPUT HIGH
+#PB8   GPIO_PB8   OUTPUT HIGH
+#PB0  GPIO_PB0  OUTPUT HIGH
+### IO MCU: PB5, PB13
+
+# SBUS OUT
+### IO MCU: PB4 PB10 PB11
+
+# CAN2
+
+# TELEM1
+PE7   GPIO_PE7   OUTPUT HIGH
+PE8   GPIO_PE8   OUTPUT HIGH
+PE9   GPIO_PE9   OUTPUT HIGH
+PE10  GPIO_PE10  OUTPUT HIGH
+
+# TELEM2
+PC8   GPIO_PC8   OUTPUT HIGH
+PC9   GPIO_PC9   OUTPUT HIGH
+PC12  GPIO_PC12  OUTPUT HIGH
+PD2   GPIO_PD2   OUTPUT HIGH
+
+# TELEM3
+PA3   GPIO_PA3   OUTPUT HIGH
+PD5   GPIO_PD5   OUTPUT HIGH
+#PD12  GPIO_PD12  OUTPUT HIGH #(I2C4： PD12 PD13 for SN :XXXX 001 XXXXXX)
+#PD13  GPIO_PD13  OUTPUT HIGH
+
+# PPM/SBUS RC
+### IO MCU:PB4 PB10 PB11
+
+# I2C
+#PB10  GPIO_PB10  OUTPUT HIGH
+#PB11  GPIO_PB11  OUTPUT HIGH
+#PD12  GPIO_PD12  OUTPUT HIGH #(I2C4: PD12 PD13 for SN :XXXX XXX 20221100 and prior)
+#PD13  GPIO_PD13  OUTPUT HIGH
+
+# FMU PWM OUT
+PA0   GPIO_PA0   OUTPUT HIGH
+PA1   GPIO_PA1   OUTPUT HIGH
+PA8   GPIO_PA8   OUTPUT HIGH
+PD14  GPIO_PD14  OUTPUT HIGH
+PD15  GPIO_PD15  OUTPUT HIGH
+PE11  GPIO_PE11  OUTPUT HIGH
+PE13  GPIO_PE13  OUTPUT HIGH
+PE14  GPIO_PE14  OUTPUT HIGH
+
+# I/O PWM OUT
+### IO MCU:
+
+####################################################
+####################################################
+####################################################
+####################################################
+####################################################
+
+
+
+
+
+# order of UARTs (and USB)
+#SERIAL_ORDER OTG1 UART7 UART5 USART1 UART8 USART3 OTG2
+SERIAL_ORDER USART3
+
+
+# pins for SWD debugging
+PA13 JTMS-SWDIO SWD
+PA14 JTCK-SWCLK SWD
+
+# debug uart
+PD8 USART3_TX USART3
+PD9 USART3_RX USART3
+
+# USART6 is for IOMCU
+PC6 USART6_TX USART6
+PC7 USART6_RX USART6
+
+IOMCU_UART USART6
+
+# ADC
+
+PA4 VDD_5V_SENS  ADC1 SCALE(2)
+
+# SPI1 - IMUs
+PA5 SPI1_SCK SPI1
+PA6 SPI1_MISO SPI1
+PA7 SPI1_MOSI SPI1
+PC13 ICM42688_CS CS
+PC14 BMI055_G_CS CS
+PC15 BMI055_A_CS CS
+PE4  BMI055_DRDY_A INPUT
+PE5  BMI055_DRDY_G INPUT
+PE6  ICM42688_DRDY INPUT
+
+# SPI2 - FRAM
+PD3 SPI2_SCK SPI2
+PC2 SPI2_MISO SPI2
+PC3 SPI2_MOSI SPI2
+PD4 FRAM_CS CS
+
+
+# CAN bus
+PD0  CAN1_RX CAN1
+PD1  CAN1_TX CAN1
+
+PB5  CAN2_RX CAN2
+PB13 CAN2_TX CAN2
+
+
+# I2C buses
+
+# I2C1, GPS+MAG
+PB7 I2C1_SDA I2C1
+PB8 I2C1_SCL I2C1
+
+# I2C2, GPS2+MAG
+PB10 I2C2_SCL I2C2
+PB11 I2C2_SDA I2C2
+
+# I2C4 internal
+PD12 I2C4_SCL I2C4
+PD13 I2C4_SDA I2C4
+
+# order of I2C buses
+I2C_ORDER I2C4 I2C1 I2C2
+define HAL_I2C_INTERNAL_MASK 1
+
+# this board is tight on DMA channels. To allow for more UART DMA we
+# disable DMA on I2C. This also prevents a problem with DMA on I2C
+# interfering with IMUs
+
+# heater
+PB9 HEATER_EN OUTPUT LOW GPIO(80)
+define HAL_HEATER_GPIO_PIN 80
+
+# Setup the IMU heater
+define HAL_HAVE_IMU_HEATER 1
+define HAL_IMU_TEMP_DEFAULT 45
+define HAL_IMUHEAT_P_DEFAULT 50
+define HAL_IMUHEAT_I_DEFAULT 0.07
+
+# power enable pins
+PB2 VDD_3V3_SENSORS1_EN OUTPUT HIGH
+
+# start peripheral power on
+PC10 nVDD_5V_HIPOWER_EN OUTPUT LOW
+PE2  nVDD_5V_PERIPH_EN  OUTPUT LOW
+
+# Control of Spektrum power pin
+PH2 SPEKTRUM_PWR OUTPUT HIGH GPIO(73)
+define HAL_GPIO_SPEKTRUM_PWR 73
+
+# Spektrum Power is Active High
+define HAL_SPEKTRUM_PWR_ENABLED 1
+
+# power sensing
+PE3 VDD_5V_PERIPH_nOC INPUT PULLUP
+PC11 VDD_5V_HIPOWER_nOC INPUT PULLUP
+
+PA15 VDD_BRICK_nVALID INPUT PULLUP
+PB12 VDD_BRICK2_nVALID INPUT PULLUP
+
+# microSD support
+PD6  SDMMC2_CK SDMMC2
+PD7  SDMMC2_CMD SDMMC2
+PB14 SDMMC2_D0 SDMMC2
+PB15 SDMMC2_D1 SDMMC2
+PB3  SDMMC2_D2 SDMMC2
+PB4  SDMMC2_D3 SDMMC2
+define FATFS_HAL_DEVICE SDCD2
+
+# LEDs
+PD10 LED_RED OUTPUT OPENDRAIN GPIO(90) HIGH
+PD11 LED_BLUE OUTPUT OPENDRAIN GPIO(92) HIGH
+
+# setup for BoardLED2
+define AP_NOTIFY_GPIO_LED_2_ENABLED 1
+define HAL_GPIO_A_LED_PIN 90
+define HAL_GPIO_B_LED_PIN 92
+
+# ID pins
+PE12 HW_VER_REV_DRIVE OUTPUT LOW
+# PC0 HW_REV_SENS ADC1 SCALE(1)
+# PC1 HW_VER_SENS ADC1 SCALE(1)
+
+# PWM output for buzzer
+PB0 TIM3_CH3 TIM3 GPIO(77) ALARM
+
+# barometers
+BARO MS56XX I2C:0:0x76
+BARO MS56XX I2C:0:0x77
+BARO BMP388 I2C:0:0x77
+
+# prototypes may have no baro
+define HAL_BARO_ALLOW_INIT_NO_BARO 1
+
+# compass
+define HAL_PROBE_EXTERNAL_I2C_COMPASSES
+COMPASS IST8310 I2C:0:0x0C false ROTATION_NONE
+COMPASS IIS2MDC I2C:1:0x1E false ROTATION_NONE
+define AP_COMPASS_IIS2MDC_ENABLED 1
+
+
+# compensate for magnetic field generated by the heater on 6C IST8310
+define HAL_HEATER_MAG_OFFSET {AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_I2C,0,0xc,0xa),Vector3f(17,14,0)}
+
+
+# we need to stop the probe of an IST8310 as an internal compass with PITCH_180
+define HAL_COMPASS_DISABLE_IST8310_INTERNAL_PROBE
+
+
+# SPI devices
+SPIDEV bmi055_g SPI1 DEVID1  BMI055_G_CS  MODE3 10*MHZ 10*MHZ
+SPIDEV bmi055_a SPI1 DEVID2  BMI055_A_CS  MODE3 10*MHZ 10*MHZ
+SPIDEV icm42688 SPI1 DEVID3  ICM42688_CS  MODE3  2*MHZ  8*MHZ
+SPIDEV ramtron  SPI2 DEVID1  FRAM_CS      MODE3  8*MHZ  8*MHZ
+
+# 2 IMUs
+IMU Invensensev3 SPI:icm42688 ROTATION_PITCH_180_YAW_90
+IMU BMI055 SPI:bmi055_a SPI:bmi055_g ROTATION_PITCH_180
+# BMI055 is replaced by BMI088 on the lastest hardware revision
+# They use the same CPU signal pins
+IMU BMI088 SPI:bmi055_a SPI:bmi055_g ROTATION_PITCH_180
+
+define HAL_DEFAULT_INS_FAST_SAMPLE 3
+
+# enable RAMTROM parameter storage
+define HAL_STORAGE_SIZE 32768
+define HAL_WITH_RAMTRON 1
+
+# allow to have have a dedicated safety switch pin
+define HAL_HAVE_SAFETY_SWITCH 1
+
+DMA_PRIORITY SDMMC* USART6* ADC* UART* USART* SPI* TIM*
+
+# enable FAT filesystem support (needs a microSD defined via SDMMC)
+define HAL_OS_FATFS_IO 1
+
+ROMFS io_firmware.bin Tools/IO_Firmware/iofirmware_f103_lowpolh.bin
+
+# build ABIN for flash-from-bootloader support:
+env BUILD_ABIN True
+
+# enable support for dshot on iomcu
+ROMFS io_firmware_dshot.bin Tools/IO_Firmware/iofirmware_f103_dshot_lowpolh.bin
+define HAL_WITH_IO_MCU_BIDIR_DSHOT 1
