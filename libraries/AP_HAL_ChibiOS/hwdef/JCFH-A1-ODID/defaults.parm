@@ -1,0 +1,24 @@
+# 4:Analog Voltage and Current
+BATT_MONITOR 4
+
+# setup the parameter for the ADC power module
+BATT_VOLT_PIN 4
+BATT_CURR_PIN 8
+BATT_VOLT_MULT 21.000
+BATT_AMP_PERVLT 21.000
+
+# roll 180
+AHRS_ORIENTATION 8
+
+
+
+
+# enforce OpenDroneID on DroneCAN. Note that we need to lock down key parameters
+# to ensure the integrity of the RemoteID system
+DID_ENABLE 1 @READONLY
+DID_OPTIONS 5 @READONLY
+DID_MAVPORT -1 @READONLY
+DID_CANDRIVER 1 @READONLY
+AHRS_EKF_TYPE 3 @READONLY
+GPS1_TYPE 1
+GPS2_TYPE 0
